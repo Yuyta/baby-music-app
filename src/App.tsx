@@ -16,53 +16,80 @@ import {
 
 type Mode = "sleep" | "relax" | "play" | "learning";
 
-interface ModeConfig {
-  [key: string]: string[];
+interface UrlItem {
+  id: number;
+  video_id: string;
 }
 
-const DEFAULT_URLS: ModeConfig = {
-  sleep: ["035d3iiFej4", "HAzZH6wccew", "XGSSmQiqBl8"], // Lullabies
-  relax: ["Na0w3Mz46GA", "P6tFwmw2OEY", "n2-beumXxEM"], // Relaxing music
-  play: ["REtbaAA4j7U", "BW4H15rK6iI", "CaqHOvgAnO0"], // Upbeat kids songs
-  learning: ["XzorjCt7Cv8", "O8BThfcH-F4", "hRxJRkMXuZI"], // English learning songs
-};
+interface ModeUrls {
+  [key: string]: UrlItem[];
+}
+
+// Dynamically determine API base URL
+// When accessing from iPhone, window.location.hostname will be the PC's IP (e.g., 192.168.40.94)
+// When accessing from PC, it will be localhost
+const API_BASE = `http://${window.location.hostname}:3001/api`;
 
 const YoutubePlayer = () => {
   const [currentMode, setCurrentMode] = useState<Mode>("sleep");
-  const [modeUrls, setModeUrls] = useState<ModeConfig>(DEFAULT_URLS);
-  const [videoId, setVideoId] = useState<string>(DEFAULT_URLS["sleep"][0]);
+  const [modeUrls, setModeUrls] = useState<ModeUrls>({});
+  const [videoId, setVideoId] = useState<string>("");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isSelectionOpen, setIsSelectionOpen] = useState(false);
   const [newUrl, setNewUrl] = useState("");
   const [player, setPlayer] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
 
-  // Load and Sanitize from LocalStorage
+  // Load URLs from backend
+  const fetchUrls = async (mode: Mode) => {
+    try {
+      const response = await fetch(`${API_BASE}/urls/${mode}`);
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('Error fetching URLs:', error);
+      return [];
+    }
+  };
+
+  // Load all modes on mount
   useEffect(() => {
-    const saved = localStorage.getItem("babyMusicApp_urls");
-    let currentUrls = DEFAULT_URLS;
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        const sanitized: ModeConfig = {};
-        (Object.keys(parsed) as Mode[]).forEach(mode => {
-          sanitized[mode] = (parsed[mode] || []).map((url: string) => extractVideoId(url)).filter((id: string | null): id is string => id !== null);
-        });
-        currentUrls = sanitized;
-        setModeUrls(sanitized);
-      } catch (e) {
-        console.error("Failed to parse saved URLs", e);
-      }
-    }
+    const loadAllUrls = async () => {
+      setLoading(true);
+      const modes: Mode[] = ['sleep', 'relax', 'play', 'learning'];
+      const allUrls: ModeUrls = {};
 
-    // Set initial video
-    if (currentUrls[currentMode] && currentUrls[currentMode].length > 0) {
-      setVideoId(currentUrls[currentMode][0]);
-    }
+      for (const mode of modes) {
+        allUrls[mode] = await fetchUrls(mode);
+      }
+
+      setModeUrls(allUrls);
+
+      // Set initial video
+      if (allUrls[currentMode] && allUrls[currentMode].length > 0) {
+        setVideoId(allUrls[currentMode][0].video_id);
+      }
+
+      setLoading(false);
+    };
+
+    loadAllUrls();
   }, []);
 
-  // Save to LocalStorage
+  // Reload URLs when mode changes
   useEffect(() => {
-    localStorage.setItem("babyMusicApp_urls", JSON.stringify(modeUrls));
-  }, [modeUrls]);
+    const reloadCurrentMode = async () => {
+      const urls = await fetchUrls(currentMode);
+      setModeUrls(prev => ({
+        ...prev,
+        [currentMode]: urls
+      }));
+    };
+
+    if (Object.keys(modeUrls).length > 0) {
+      reloadCurrentMode();
+    }
+  }, [currentMode]);
 
   const extractVideoId = (url: string) => {
     if (!url) return null;
@@ -76,13 +103,14 @@ const YoutubePlayer = () => {
   const handlePlayRandom = useCallback(() => {
     const urls = modeUrls[currentMode];
     if (urls && urls.length > 0) {
-      const otherUrls = urls.filter(id => id !== videoId);
-      const targetUrls = otherUrls.length > 0 ? otherUrls : urls;
+      const currentVideoIds = urls.map(u => u.video_id);
+      const otherUrls = currentVideoIds.filter(id => id !== videoId);
+      const targetUrls = otherUrls.length > 0 ? otherUrls : currentVideoIds;
 
       const randomIndex = Math.floor(Math.random() * targetUrls.length);
       const nextId = targetUrls[randomIndex];
 
-      console.log("Next ID (Sanitized):", nextId);
+      console.log("Next ID (Random):", nextId);
       setVideoId(nextId);
 
       if (player) {
@@ -94,24 +122,58 @@ const YoutubePlayer = () => {
     }
   }, [currentMode, modeUrls, player, videoId]);
 
-  const addUrl = () => {
+  const handlePlaySpecific = useCallback((videoId: string) => {
+    console.log("Playing specific video:", videoId);
+    setVideoId(videoId);
+
+    if (player) {
+      player.loadVideoById(videoId);
+      player.playVideo();
+    }
+
+    setIsSelectionOpen(false);
+  }, [player]);
+
+  const addUrl = async () => {
     const id = extractVideoId(newUrl);
     if (id) {
-      setModeUrls(prev => ({
-        ...prev,
-        [currentMode]: [...prev[currentMode], id]
-      }));
-      setNewUrl("");
+      try {
+        const response = await fetch(`${API_BASE}/urls/${currentMode}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ videoId: id })
+        });
+
+        const newItem = await response.json();
+
+        setModeUrls(prev => ({
+          ...prev,
+          [currentMode]: [...(prev[currentMode] || []), { id: newItem.id, video_id: id }]
+        }));
+        setNewUrl("");
+      } catch (error) {
+        console.error('Error adding URL:', error);
+        alert("URLの追加に失敗しました");
+      }
     } else {
       alert("無効なURLまたはIDです");
     }
   };
 
-  const removeUrl = (index: number) => {
-    setModeUrls(prev => ({
-      ...prev,
-      [currentMode]: prev[currentMode].filter((_, i) => i !== index)
-    }));
+  const removeUrl = async (dbId: number, index: number) => {
+    try {
+      await fetch(`${API_BASE}/urls/${currentMode}/${dbId}`, {
+        method: 'DELETE'
+      });
+
+      setModeUrls(prev => ({
+        ...prev,
+        [currentMode]: prev[currentMode].filter((_, i) => i !== index)
+      }));
+    } catch (error) {
+      console.error('Error removing URL:', error);
+      alert("URLの削除に失敗しました");
+    }
   };
 
   const onPlayerReady: YouTubeProps["onReady"] = (event) => {
@@ -123,11 +185,11 @@ const YoutubePlayer = () => {
     height: "100%",
     width: "100%",
     playerVars: {
-      autoplay: 1, // ユーザー操作（ボタンクリック）から呼ばれるため、1に設定
+      autoplay: 1,
       modestbranding: 1,
       rel: 0,
       controls: 1,
-      playsinline: 1, // iOS Safariでフルスクリーン表示を防ぐ
+      playsinline: 1,
     },
   };
 
@@ -137,6 +199,17 @@ const YoutubePlayer = () => {
     play: { icon: Gamepad2, label: "お楽しみ", color: "play" },
     learning: { icon: BookOpen, label: "えいご", color: "learning" },
   };
+
+  if (loading) {
+    return (
+      <div className="container animate-fade-in">
+        <div className="glass card" style={{ textAlign: "center", padding: "3rem" }}>
+          <Music size={48} style={{ margin: "0 auto 1rem", opacity: 0.5 }} />
+          <p>読み込み中...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container animate-fade-in">
@@ -169,7 +242,11 @@ const YoutubePlayer = () => {
           ランダム再生開始
         </button>
 
-        <div style={{ display: "flex", justifyContent: "center", marginBottom: "1.5rem" }}>
+        <div style={{ display: "flex", gap: "1rem", justifyContent: "center", marginBottom: "1.5rem" }}>
+          <button className="btn-secondary" onClick={() => setIsSelectionOpen(true)}>
+            <Play size={18} />
+            選択再生
+          </button>
           <button className="btn-secondary" onClick={() => setIsSettingsOpen(true)}>
             <Settings size={18} />
             設定を編集
@@ -212,6 +289,37 @@ const YoutubePlayer = () => {
         </div>
       </div>
 
+      {isSelectionOpen && (
+        <div className="modal-overlay" onClick={() => setIsSelectionOpen(false)}>
+          <div className="modal-content glass" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+              <h2 style={{ margin: 0, display: "flex", alignItems: "center", gap: "8px" }}>
+                <Play size={20} />
+                {modeInfo[currentMode].label} - 選択再生
+              </h2>
+              <button onClick={() => setIsSelectionOpen(false)} style={{ background: "none", border: "none", color: "white", cursor: "pointer" }}>
+                <X size={24} />
+              </button>
+            </div>
+
+            <div>
+              <p style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.6)", marginBottom: "0.5rem" }}>再生する曲を選択:</p>
+              {modeUrls[currentMode]?.map((item) => (
+                <div key={item.id} className="url-item" style={{ cursor: "pointer" }} onClick={() => handlePlaySpecific(item.video_id)}>
+                  <span style={{ fontSize: "0.9rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+                    {item.video_id}
+                  </span>
+                  <Play size={18} color="#10b981" />
+                </div>
+              ))}
+              {(!modeUrls[currentMode] || modeUrls[currentMode].length === 0) && (
+                <p style={{ textAlign: "center", color: "rgba(255,255,255,0.3)", padding: "1rem" }}>URLが設定されていません</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {isSettingsOpen && (
         <div className="modal-overlay" onClick={() => setIsSettingsOpen(false)}>
           <div className="modal-content glass" onClick={(e) => e.stopPropagation()}>
@@ -234,6 +342,7 @@ const YoutubePlayer = () => {
                   placeholder="YouTube URL or ID"
                   value={newUrl}
                   onChange={(e) => setNewUrl(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && addUrl()}
                   style={{ marginBottom: 0 }}
                 />
                 <button className="btn-secondary" onClick={addUrl} style={{ padding: "0.75rem" }}>
@@ -243,18 +352,18 @@ const YoutubePlayer = () => {
             </div>
 
             <div>
-              <p style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.6)", marginBottom: "0.5rem" }}>現在のURLリスト:</p>
-              {modeUrls[currentMode].map((id, index) => (
-                <div key={index} className="url-item">
+              <p style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.6)", marginBottom: "0.5rem" }}>現在のURLリスト ({modeUrls[currentMode]?.length || 0}件):</p>
+              {modeUrls[currentMode]?.map((item, index) => (
+                <div key={item.id} className="url-item">
                   <span style={{ fontSize: "0.8rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
-                    {id}
+                    {item.video_id}
                   </span>
-                  <button className="delete-btn" onClick={() => removeUrl(index)}>
+                  <button className="delete-btn" onClick={() => removeUrl(item.id, index)}>
                     <Trash2 size={16} />
                   </button>
                 </div>
               ))}
-              {modeUrls[currentMode].length === 0 && (
+              {(!modeUrls[currentMode] || modeUrls[currentMode].length === 0) && (
                 <p style={{ textAlign: "center", color: "rgba(255,255,255,0.3)", padding: "1rem" }}>URLが設定されていません</p>
               )}
             </div>
