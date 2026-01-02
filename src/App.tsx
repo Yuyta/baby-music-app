@@ -283,7 +283,7 @@ const YoutubePlayer = () => {
 
         <button className="btn-primary" onClick={handlePlayRandom} style={{ fontSize: "1.3rem", padding: "1.2rem" }}>
           <Play size={28} fill="currentColor" style={{ verticalAlign: "middle", marginRight: "10px" }} />
-          ランダム再生開始
+          ランダム再生
         </button>
 
         <div style={{ display: "flex", gap: "1.2rem", justifyContent: "center", marginBottom: "1.5rem" }}>
@@ -308,7 +308,7 @@ const YoutubePlayer = () => {
           <div className="modal-content glass" onClick={(e) => e.stopPropagation()} style={{ width: "95%", maxWidth: "500px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
               <h2 style={{ fontSize: "1.5rem", margin: 0, display: "flex", alignItems: "center", gap: "10px" }}>
-                <Play size={24} /> {modeInfo[currentMode].label}
+                <Play size={24} /> {modeInfo[currentMode].label} - 選択再生
               </h2>
               <button onClick={() => setIsSelectionOpen(false)} style={{ background: "none", border: "none", color: "white" }}><X size={28} /></button>
             </div>
@@ -331,7 +331,7 @@ const YoutubePlayer = () => {
           <div className="modal-content glass" onClick={(e) => e.stopPropagation()} style={{ width: "95%", maxWidth: "500px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
               <h2 style={{ fontSize: "1.5rem", margin: 0, display: "flex", alignItems: "center", gap: "10px" }}>
-                <Settings size={24} /> 設定
+                <Settings size={24} /> {modeInfo[currentMode].label} - 設定
               </h2>
               <button onClick={() => setIsSettingsOpen(false)} style={{ background: "none", border: "none", color: "white" }}><X size={28} /></button>
             </div>
