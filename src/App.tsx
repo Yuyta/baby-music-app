@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import YouTube from "react-youtube";
 import type { YouTubeProps } from "react-youtube";
 import {
@@ -14,6 +14,77 @@ import {
   Music
 } from "lucide-react";
 
+const marqueeStyle = `
+  @keyframes marquee {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+`;
+
+// --- マーキーテキストコンポーネント ---
+const MarqueeText = ({ text, fontSize }: { text: string, fontSize: string }) => {
+  const [isOverflowing, setIsOverflowing] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const measureRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    const checkOverflow = () => {
+      if (containerRef.current && measureRef.current) {
+        // 判定に2pxのバッファを持たせ、確実に溢れている時だけアニメーションさせる
+        setIsOverflowing(measureRef.current.offsetWidth > containerRef.current.offsetWidth + 2);
+      }
+    };
+
+    const timer = setTimeout(checkOverflow, 150);
+    window.addEventListener('resize', checkOverflow);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', checkOverflow);
+    };
+  }, [text]);
+
+  const textStyle: React.CSSProperties = {
+    fontSize: fontSize,
+    fontWeight: "500",
+    whiteSpace: "nowrap",
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      style={{
+        flex: 1,
+        overflow: "hidden",
+        position: 'relative',
+        display: 'flex',
+        alignItems: 'center',
+        height: "1.4em",
+        // 溢れている時のみフェードマスクをかける
+        maskImage: isOverflowing ? "linear-gradient(to right, transparent, black 3%, black 97%, transparent)" : "none",
+        WebkitMaskImage: isOverflowing ? "linear-gradient(to right, transparent, black 3%, black 97%, transparent)" : "none",
+      }}
+    >
+      {/* 測定用要素 */}
+      <span ref={measureRef} style={{ ...textStyle, position: 'absolute', visibility: 'hidden' }}>
+        {text}
+      </span>
+
+      {isOverflowing ? (
+        /* 文字が溢れる場合のみ流れる */
+        <div style={{ ...textStyle, display: "inline-block", animation: "marquee 45s linear infinite" }}>
+          <span>{text}</span>
+          <span style={{ paddingLeft: "100px" }}>{text}</span>
+        </div>
+      ) : (
+        /* 収まる場合は静止 */
+        <span style={{ ...textStyle, overflow: "hidden", textOverflow: "ellipsis" }}>
+          {text}
+        </span>
+      )}
+    </div>
+  );
+};
+
 type Mode = "sleep" | "relax" | "play" | "learning";
 
 interface UrlItem {
@@ -25,14 +96,12 @@ interface ModeUrls {
   [key: string]: UrlItem[];
 }
 
-// Dynamically determine API base URL
-// When accessing from iPhone, window.location.hostname will be the PC's IP (e.g., 192.168.40.94)
-// When accessing from PC, it will be localhost
 const API_BASE = `http://${window.location.hostname}:3001/api`;
 
 const YoutubePlayer = () => {
   const [currentMode, setCurrentMode] = useState<Mode>("sleep");
   const [modeUrls, setModeUrls] = useState<ModeUrls>({});
+  const [videoTitles, setVideoTitles] = useState<{ [key: string]: string }>({});
   const [videoId, setVideoId] = useState<string>("");
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isSelectionOpen, setIsSelectionOpen] = useState(false);
@@ -40,52 +109,57 @@ const YoutubePlayer = () => {
   const [player, setPlayer] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  // Load URLs from backend
+  const fetchVideoTitle = async (vId: string) => {
+    if (videoTitles[vId]) return;
+    try {
+      const response = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${vId}&format=json`);
+      const data = await response.json();
+      setVideoTitles(prev => ({ ...prev, [vId]: data.title }));
+    } catch (error) {
+      setVideoTitles(prev => ({ ...prev, [vId]: vId }));
+    }
+  };
+
   const fetchUrls = async (mode: Mode) => {
     try {
       const response = await fetch(`${API_BASE}/urls/${mode}`);
       const data = await response.json();
       return data;
     } catch (error) {
-      console.error('Error fetching URLs:', error);
       return [];
     }
   };
 
-  // Load all modes on mount
   useEffect(() => {
     const loadAllUrls = async () => {
       setLoading(true);
       const modes: Mode[] = ['sleep', 'relax', 'play', 'learning'];
       const allUrls: ModeUrls = {};
-
       for (const mode of modes) {
         allUrls[mode] = await fetchUrls(mode);
       }
-
       setModeUrls(allUrls);
-
-      // Set initial video
       if (allUrls[currentMode] && allUrls[currentMode].length > 0) {
         setVideoId(allUrls[currentMode][0].video_id);
       }
-
       setLoading(false);
     };
-
     loadAllUrls();
   }, []);
 
-  // Reload URLs when mode changes
+  useEffect(() => {
+    const allVideoIds = Object.values(modeUrls).flat().map(item => item.video_id);
+    const uniqueIds = Array.from(new Set(allVideoIds));
+    uniqueIds.forEach(id => {
+      if (!videoTitles[id]) fetchVideoTitle(id);
+    });
+  }, [modeUrls]);
+
   useEffect(() => {
     const reloadCurrentMode = async () => {
       const urls = await fetchUrls(currentMode);
-      setModeUrls(prev => ({
-        ...prev,
-        [currentMode]: urls
-      }));
+      setModeUrls(prev => ({ ...prev, [currentMode]: urls }));
     };
-
     if (Object.keys(modeUrls).length > 0) {
       reloadCurrentMode();
     }
@@ -94,7 +168,6 @@ const YoutubePlayer = () => {
   const extractVideoId = (url: string) => {
     if (!url) return null;
     if (url.length === 11 && /^[a-zA-Z0-9_-]{11}$/.test(url)) return url;
-
     const regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?))\??v?=?([^#&?]{11}).*/;
     const match = url.match(regExp);
     return (match && match[7]) ? match[7] : null;
@@ -106,31 +179,22 @@ const YoutubePlayer = () => {
       const currentVideoIds = urls.map(u => u.video_id);
       const otherUrls = currentVideoIds.filter(id => id !== videoId);
       const targetUrls = otherUrls.length > 0 ? otherUrls : currentVideoIds;
-
       const randomIndex = Math.floor(Math.random() * targetUrls.length);
       const nextId = targetUrls[randomIndex];
-
-      console.log("Next ID (Random):", nextId);
       setVideoId(nextId);
-
       if (player) {
         player.loadVideoById(nextId);
         player.playVideo();
       }
-    } else {
-      alert("このモードには曲が設定されていません。設定から追加してください。");
     }
   }, [currentMode, modeUrls, player, videoId]);
 
   const handlePlaySpecific = useCallback((videoId: string) => {
-    console.log("Playing specific video:", videoId);
     setVideoId(videoId);
-
     if (player) {
       player.loadVideoById(videoId);
       player.playVideo();
     }
-
     setIsSelectionOpen(false);
   }, [player]);
 
@@ -143,54 +207,38 @@ const YoutubePlayer = () => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ videoId: id })
         });
-
         const newItem = await response.json();
-
         setModeUrls(prev => ({
           ...prev,
           [currentMode]: [...(prev[currentMode] || []), { id: newItem.id, video_id: id }]
         }));
         setNewUrl("");
+        fetchVideoTitle(id);
       } catch (error) {
-        console.error('Error adding URL:', error);
-        alert("URLの追加に失敗しました");
+        alert("追加に失敗しました");
       }
-    } else {
-      alert("無効なURLまたはIDです");
     }
   };
 
   const removeUrl = async (dbId: number, index: number) => {
     try {
-      await fetch(`${API_BASE}/urls/${currentMode}/${dbId}`, {
-        method: 'DELETE'
-      });
-
+      await fetch(`${API_BASE}/urls/${currentMode}/${dbId}`, { method: 'DELETE' });
       setModeUrls(prev => ({
         ...prev,
         [currentMode]: prev[currentMode].filter((_, i) => i !== index)
       }));
     } catch (error) {
-      console.error('Error removing URL:', error);
-      alert("URLの削除に失敗しました");
+      alert("削除に失敗しました");
     }
   };
 
   const onPlayerReady: YouTubeProps["onReady"] = (event) => {
     setPlayer(event.target);
-    console.log("Player ready");
   };
 
   const opts: YouTubeProps["opts"] = {
-    height: "100%",
-    width: "100%",
-    playerVars: {
-      autoplay: 1,
-      modestbranding: 1,
-      rel: 0,
-      controls: 1,
-      playsinline: 1,
-    },
+    height: "100%", width: "100%",
+    playerVars: { autoplay: 1, modestbranding: 1, rel: 0, controls: 1, playsinline: 1 },
   };
 
   const modeInfo = {
@@ -200,25 +248,21 @@ const YoutubePlayer = () => {
     learning: { icon: BookOpen, label: "えいご", color: "learning" },
   };
 
-  if (loading) {
-    return (
-      <div className="container animate-fade-in">
-        <div className="glass card" style={{ textAlign: "center", padding: "3rem" }}>
-          <Music size={48} style={{ margin: "0 auto 1rem", opacity: 0.5 }} />
-          <p>読み込み中...</p>
-        </div>
-      </div>
-    );
-  }
+  if (loading) return null;
 
   return (
     <div className="container animate-fade-in">
+      <style>{marqueeStyle}</style>
       <div className="glass card">
         <div style={{ textAlign: "center", marginBottom: "1.5rem" }}>
-          <h1 className="title-gradient" style={{ fontSize: "2rem", marginBottom: "0.25rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "10px" }}>
-            <Music size={32} color="#8b5cf6" /> Baby Music
+          <h1 className="title-gradient" style={{ fontSize: "2.2rem", display: "flex", alignItems: "center", justifyContent: "center", gap: "10px" }}>
+            <Music size={36} color="#8b5cf6" /> Baby Music
           </h1>
-          <p style={{ color: "rgba(255,255,255,0.5)", fontSize: "0.9rem" }}>Select a mode and press play</p>
+          {videoId && videoTitles[videoId] && (
+            <p style={{ color: "#a78bfa", fontSize: "0.95rem", marginTop: "8px", fontWeight: "bold", padding: "0 15px" }}>
+              ♪ {videoTitles[videoId]}
+            </p>
+          )}
         </div>
 
         <div className="mode-grid">
@@ -230,111 +274,69 @@ const YoutubePlayer = () => {
                 className={`mode-btn ${currentMode === mode ? `active ${Info.color}` : ""}`}
                 onClick={() => setCurrentMode(mode)}
               >
-                <Info.icon size={32} />
-                <span>{Info.label}</span>
+                <Info.icon size={36} />
+                <span style={{ fontSize: "1.1rem" }}>{Info.label}</span>
               </button>
             );
           })}
         </div>
 
-        <button className="btn-primary" onClick={handlePlayRandom}>
-          <Play size={24} fill="currentColor" style={{ verticalAlign: "middle", marginRight: "8px" }} />
+        <button className="btn-primary" onClick={handlePlayRandom} style={{ fontSize: "1.3rem", padding: "1.2rem" }}>
+          <Play size={28} fill="currentColor" style={{ verticalAlign: "middle", marginRight: "10px" }} />
           ランダム再生開始
         </button>
 
-        <div style={{ display: "flex", gap: "1rem", justifyContent: "center", marginBottom: "1.5rem" }}>
-          <button className="btn-secondary" onClick={() => setIsSelectionOpen(true)}>
-            <Play size={18} />
-            選択再生
+        <div style={{ display: "flex", gap: "1.2rem", justifyContent: "center", marginBottom: "1.5rem" }}>
+          <button className="btn-secondary" onClick={() => setIsSelectionOpen(true)} style={{ fontSize: "1.1rem", padding: "1.1rem 1.5rem", flex: 1 }}>
+            <Play size={22} /> 選択再生
           </button>
-          <button className="btn-secondary" onClick={() => setIsSettingsOpen(true)}>
-            <Settings size={18} />
-            設定を編集
+          <button className="btn-secondary" onClick={() => setIsSettingsOpen(true)} style={{ fontSize: "1.1rem", padding: "1.1rem 1.5rem", flex: 1 }}>
+            <Settings size={22} /> リストを編集
           </button>
         </div>
 
-        <div style={{
-          position: "relative",
-          paddingBottom: "56.25%",
-          height: 0,
-          overflow: "hidden",
-          borderRadius: "1rem",
-          background: "#000",
-          boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
-        }}>
+        <div style={{ position: "relative", paddingBottom: "56.25%", height: 0, overflow: "hidden", borderRadius: "1rem", background: "#000" }}>
           {videoId && (
-            <YouTube
-              videoId={videoId}
-              opts={opts}
-              onReady={onPlayerReady}
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                width: "100%",
-                height: "100%",
-              }}
-            />
-          )}
-          {!videoId && (
-            <div style={{
-              position: "absolute",
-              top: 0, left: 0, width: "100%", height: "100%",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              color: "rgba(255,255,255,0.2)"
-            }}>
-              <Music size={48} />
-            </div>
+            <YouTube videoId={videoId} opts={opts} onReady={onPlayerReady} style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%" }} />
           )}
         </div>
       </div>
 
+      {/* --- 選択再生モーダル --- */}
       {isSelectionOpen && (
         <div className="modal-overlay" onClick={() => setIsSelectionOpen(false)}>
-          <div className="modal-content glass" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-content glass" onClick={(e) => e.stopPropagation()} style={{ width: "95%", maxWidth: "500px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-              <h2 style={{ margin: 0, display: "flex", alignItems: "center", gap: "8px" }}>
-                <Play size={20} />
-                {modeInfo[currentMode].label} - 選択再生
+              <h2 style={{ fontSize: "1.5rem", margin: 0, display: "flex", alignItems: "center", gap: "10px" }}>
+                <Play size={24} /> {modeInfo[currentMode].label}
               </h2>
-              <button onClick={() => setIsSelectionOpen(false)} style={{ background: "none", border: "none", color: "white", cursor: "pointer" }}>
-                <X size={24} />
-              </button>
+              <button onClick={() => setIsSelectionOpen(false)} style={{ background: "none", border: "none", color: "white" }}><X size={28} /></button>
             </div>
-
-            <div>
-              <p style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.6)", marginBottom: "0.5rem" }}>再生する曲を選択:</p>
+            <div style={{ maxHeight: "60vh", overflowY: "auto" }}>
               {modeUrls[currentMode]?.map((item) => (
-                <div key={item.id} className="url-item" style={{ cursor: "pointer" }} onClick={() => handlePlaySpecific(item.video_id)}>
-                  <span style={{ fontSize: "0.9rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
-                    {item.video_id}
-                  </span>
-                  <Play size={18} color="#10b981" />
+                <div key={item.id} className="url-item" style={{ cursor: "pointer", padding: "1rem" }} onClick={() => handlePlaySpecific(item.video_id)}>
+                  {/* 文字サイズを 1rem に調整 */}
+                  <MarqueeText text={videoTitles[item.video_id] || "読み込み中..."} fontSize="1rem" />
+                  <Play size={22} color="#10b981" style={{ flexShrink: 0, marginLeft: "12px" }} />
                 </div>
               ))}
-              {(!modeUrls[currentMode] || modeUrls[currentMode].length === 0) && (
-                <p style={{ textAlign: "center", color: "rgba(255,255,255,0.3)", padding: "1rem" }}>URLが設定されていません</p>
-              )}
             </div>
           </div>
         </div>
       )}
 
+      {/* --- 設定編集モーダル --- */}
       {isSettingsOpen && (
         <div className="modal-overlay" onClick={() => setIsSettingsOpen(false)}>
-          <div className="modal-content glass" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-content glass" onClick={(e) => e.stopPropagation()} style={{ width: "95%", maxWidth: "500px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-              <h2 style={{ margin: 0, display: "flex", alignItems: "center", gap: "8px" }}>
-                <Settings size={20} />
-                {modeInfo[currentMode].label} の設定
+              <h2 style={{ fontSize: "1.5rem", margin: 0, display: "flex", alignItems: "center", gap: "10px" }}>
+                <Settings size={24} /> 設定
               </h2>
-              <button onClick={() => setIsSettingsOpen(false)} style={{ background: "none", border: "none", color: "white", cursor: "pointer" }}>
-                <X size={24} />
-              </button>
+              <button onClick={() => setIsSettingsOpen(false)} style={{ background: "none", border: "none", color: "white" }}><X size={28} /></button>
             </div>
 
             <div style={{ marginBottom: "1.5rem" }}>
-              <p style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.6)", marginBottom: "0.5rem" }}>新しいURLを追加:</p>
               <div style={{ display: "flex", gap: "0.5rem" }}>
                 <input
                   type="text"
@@ -343,34 +345,24 @@ const YoutubePlayer = () => {
                   value={newUrl}
                   onChange={(e) => setNewUrl(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && addUrl()}
-                  style={{ marginBottom: 0 }}
+                  style={{ marginBottom: 0, fontSize: "1rem", padding: "0.8rem" }}
                 />
-                <button className="btn-secondary" onClick={addUrl} style={{ padding: "0.75rem" }}>
-                  <Plus size={20} />
-                </button>
+                <button className="btn-secondary" onClick={addUrl} style={{ padding: "0.8rem" }}><Plus size={24} /></button>
               </div>
             </div>
 
-            <div>
-              <p style={{ fontSize: "0.9rem", color: "rgba(255,255,255,0.6)", marginBottom: "0.5rem" }}>現在のURLリスト ({modeUrls[currentMode]?.length || 0}件):</p>
+            <div style={{ maxHeight: "50vh", overflowY: "auto" }}>
               {modeUrls[currentMode]?.map((item, index) => (
-                <div key={item.id} className="url-item">
-                  <span style={{ fontSize: "0.8rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
-                    {item.video_id}
-                  </span>
-                  <button className="delete-btn" onClick={() => removeUrl(item.id, index)}>
-                    <Trash2 size={16} />
+                <div key={item.id} className="url-item" style={{ padding: "0.8rem 1rem" }}>
+                  {/* 文字サイズを 0.85rem に調整 */}
+                  <MarqueeText text={videoTitles[item.video_id] || item.video_id} fontSize="0.85rem" />
+                  <button className="delete-btn" onClick={() => removeUrl(item.id, index)} style={{ flexShrink: 0, marginLeft: "12px" }}>
+                    <Trash2 size={20} />
                   </button>
                 </div>
               ))}
-              {(!modeUrls[currentMode] || modeUrls[currentMode].length === 0) && (
-                <p style={{ textAlign: "center", color: "rgba(255,255,255,0.3)", padding: "1rem" }}>URLが設定されていません</p>
-              )}
             </div>
-
-            <button className="btn-primary" onClick={() => setIsSettingsOpen(false)} style={{ marginTop: "1.5rem", marginBottom: 0 }}>
-              閉じる
-            </button>
+            <button className="btn-primary" onClick={() => setIsSettingsOpen(false)} style={{ marginTop: "1.5rem", fontSize: "1.2rem" }}>閉じる</button>
           </div>
         </div>
       )}
