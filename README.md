@@ -1,73 +1,216 @@
-# React + TypeScript + Vite
+# Baby Music App 🎵
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+赤ちゃん向けの音楽を YouTube から再生する Web アプリケーションです。4つのモード（スリープ、リラックス、お楽しみ、えいご）があり、動画の追加・削除・選択再生が可能です。同じネットワーク(Wifi)内のPCやスマホのブラウザで動作します。
 
-Currently, two official plugins are available:
+---
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## � このアプリでできること
 
-## React Compiler
+- **4つのモード**から気分に合わせて音楽を選べます
+  - 🌙 **スリープ** - 子守唄
+  - 🌊 **リラックス** - 落ち着く音楽
+  - 🎮 **お楽しみ** - 元気な子供向けの歌
+  - 📚 **えいご** - 英語学習の歌
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **3つの再生方法**
+  - ランダム再生 - モード内からランダムに曲を再生
+  - 選択再生 - リストから好きな曲を選んで再生
+  - 自動で次の曲に切り替わる
 
-## Expanding the ESLint configuration
+- **曲の管理**
+  - YouTube の URL を追加・削除できます
+  - 追加した曲はデータベースに保存され、アプリを閉じても残ります
+  - PC とスマホで同じ曲リストを共有できます
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+---
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## �️ 必要な環境
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+- **Node.js** (バージョン 20 以降) - [公式サイト](https://nodejs.org/)からダウンロード
+- **同じ Wi-Fi ネットワーク** - スマホ から使う場合、PC と同じ Wi-Fi に接続してください
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+---
+
+## 🚀 初回セットアップ（初めて使う方向け）
+
+### 1. 依存パッケージのインストール
+
+プロジェクトフォルダで以下のコマンドを実行します：
+
+```bash
+# フロントエンド（画面）のパッケージをインストール
+npm install
+
+# バックエンド（データベース）のパッケージをインストール
+cd server
+npm install
+cd ..
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+### 2. アプリの起動
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+**推奨：フロントエンドとバックエンドを同時に起動**
+```bash
+npm run dev:all
 ```
+
+このコマンド1つで、画面とデータベースの両方が起動します。
+
+**または、個別に起動する場合**
+```bash
+# ターミナル1: バックエンド（データベース）
+npm run server
+
+# ターミナル2: フロントエンド（画面）
+npm run dev
+```
+
+### 3. アプリを開く
+
+起動が完了したら、ブラウザで以下の URL を開きます：
+
+- **PC から**: `http://localhost:5173`
+- **スマホ から**: `http://192.168.40.94:5173` 
+  - ※ `192.168.40.94` の部分は、お使いの PC の IP アドレスに置き換えてください
+  - IP アドレスの確認方法（Windows）:
+    ```bash
+    ipconfig
+    ```
+    「IPv4 アドレス」という項目を探してください
+
+---
+
+## 📖 使い方
+
+### ステップ1: モードを選ぶ
+画面上部の4つのボタンから、気分に合わせてモードを選びます。
+
+### ステップ2: 音楽を再生する
+
+#### 方法1: ランダム再生
+「**ランダム再生開始**」ボタンをタップすると、選んだモードの曲からランダムに再生されます。
+
+#### 方法2: 選択再生（好きな曲を選ぶ）
+1. 「**選択再生**」ボタンをタップ
+2. 曲のリストが表示されます
+3. 再生したい曲をタップすると、すぐに再生されます
+
+### ステップ3: 曲を追加・削除する
+
+1. 「**設定を編集**」ボタンをタップ
+2. **曲を追加する場合**:
+   - YouTube の URL または動画 ID を入力欄に貼り付け
+   - 「**+**」ボタンをタップ
+   - Enter キーでも追加できます
+3. **曲を削除する場合**:
+   - 削除したい曲の横にある「**🗑️**」ボタンをタップ
+
+追加・削除した曲は自動的にデータベースに保存され、アプリを閉じても残ります。
+
+---
+
+## 📂 プロジェクト構成
+
+```
+baby-music-app/
+├─ src/                    # フロントエンド（画面）のコード
+│   ├─ App.tsx            # メインの画面とロジック
+│   ├─ index.css          # デザイン（グラスモルフィズム、グラデーション）
+│   └─ main.tsx           # React のエントリーポイント
+├─ server/                 # バックエンド（データベース）のコード
+│   ├─ db.js              # SQLite データベースの操作
+│   ├─ index.js           # API サーバー（曲の追加・削除・取得）
+│   └─ music_urls.db      # 曲のデータが保存されるファイル
+├─ package.json            # フロントエンドの設定と依存関係
+├─ vite.config.ts          # Vite の設定（ネットワークアクセス有効化）
+└─ README.md               # このファイル
+```
+
+---
+
+## 🔧 よく使うコマンド
+
+| コマンド | 説明 |
+|---------|------|
+| `npm run dev:all` | フロントエンドとバックエンドを同時起動（推奨） |
+| `npm run dev` | フロントエンドのみ起動 |
+| `npm run server` | バックエンドのみ起動 |
+| `npm run build` | 本番用にビルド（デプロイ時） |
+
+---
+
+## 📱 スマホ で使うための設定
+
+このアプリは スマホ の Safari でも動作するように設計されています。
+
+### 自動で対応している機能
+- **動的な API URL**: スマホ からアクセスすると、自動的に PC の IP アドレスに接続します
+- **Safari の自動再生対応**: ボタンをタップすることで動画が再生されます
+- **インライン再生**: 動画が全画面にならず、アプリ内で再生されます
+
+### 接続できない場合のチェックポイント
+1. PC と スマホ が**同じ Wi-Fi** に接続されているか確認
+2. PC のファイアウォールで**ポート 5173 と 3001** が許可されているか確認
+3. バックエンドサーバーが起動しているか確認（`npm run server` または `npm run dev:all`）
+
+---
+
+## �️ 技術スタック
+
+### フロントエンド
+- **React** - UI フレームワーク
+- **TypeScript** - 型安全な JavaScript
+- **Vite** - 高速な開発サーバー
+- **react-youtube** - YouTube プレイヤーの埋め込み
+- **lucide-react** - アイコン
+
+### バックエンド
+- **Express** - Web サーバーフレームワーク
+- **SQLite** - 軽量なデータベース（ファイルベース）
+- **better-sqlite3** - 高速な SQLite ドライバ
+- **CORS** - クロスオリジンリクエスト対応
+
+---
+
+## 🎨 デザインの特徴
+
+- **グラスモルフィズム**: 半透明でぼかしのある洗練されたデザイン
+- **グラデーション**: 鮮やかな色のグラデーション背景
+- **アニメーション**: スムーズなホバー効果とトランジション
+- **レスポンシブ**: PC とスマホの両方で美しく表示
+
+---
+
+## ❓ よくある質問
+
+### Q: 曲が再生されない
+**A**: 以下を確認してください
+- バックエンドサーバーが起動しているか（`npm run server`）
+- YouTube の動画 ID が正しいか（11文字の英数字）
+- ブラウザのコンソールにエラーが表示されていないか
+
+### Q: スマホ から接続できない
+**A**: 以下を確認してください
+- PC と スマホ が同じ Wi-Fi に接続されているか
+- PC の IP アドレスが正しいか（`ipconfig` で確認）
+- PC のファイアウォールでポート 5173 と 3001 が許可されているか
+
+### Q: 追加した曲が消えてしまう
+**A**: バックエンドサーバーが起動していないと、データベースに保存されません。`npm run dev:all` で両方を起動してください。
+
+---
+
+## 📝 ライセンス
+
+このプロジェクトは個人利用・学習目的で自由に使用できます。
+
+---
+
+## 🙏 クレジット
+
+- **アイコン**: [Lucide](https://lucide.dev/) (MIT License)
+- **YouTube プレイヤー**: [react-youtube](https://github.com/tjallingt/react-youtube)
+
+---
+
+それでは、楽しい子育て＆音楽ライフを！🎶
